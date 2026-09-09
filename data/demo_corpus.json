@@ -1,0 +1,22 @@
+[
+  {
+    "filename": "Relatorio_Final_PIBIC_IAEbot.pdf",
+    "text": "O IAEbot é um sistema de chatbot baseado em Recuperação Aumentada por Geração (RAG), concebido para responder perguntas em português com base em documentos técnicos em PDF do Instituto de Aeronáutica e Espaço. O objetivo é reduzir o tempo de pesquisa em grandes acervos e aumentar a confiabilidade por meio de recuperação semântica e citação das fontes."
+  },
+  {
+    "filename": "Relatorio_Final_PIBIC_IAEbot.pdf",
+    "text": "O objetivo geral do projeto é projetar, implementar e avaliar um assistente conversacional fundamentado em RAG. Entre os objetivos específicos estão construir indexação e busca semântica, integrar a busca a um modelo de linguagem local, desenvolver interface web com histórico e fontes e estruturar estratégias de prompt para aumentar confiabilidade e rastreabilidade."
+  },
+  {
+    "filename": "Relatorio_Final_PIBIC_IAEbot.pdf",
+    "text": "O modelo de embeddings adotado é sentence-transformers/all-MiniLM-L6-v2. A busca usa similaridade de cosseno, top_k igual a 8 e limiar de similaridade 0,4. Quando nenhum trecho supera o limiar, o sistema informa que não encontrou resposta, reduzindo respostas especulativas."
+  },
+  {
+    "filename": "Relatorio_Tecnico_Demo_IAEbot_2_0.pdf",
+    "text": "Página 10. Tabela do ensaio de tração do corpo de prova CP-07 com valores tabulados de deformação até 13,3%. Essa tabela não contém o valor final máximo anotado no gráfico da página 12."
+  },
+  {
+    "filename": "Relatorio_Tecnico_Demo_IAEbot_2_0.pdf",
+    "text": "Página 12, Figura 4. Evidência visual pré-processada do gráfico tensão-deformação do ensaio de tração do corpo de prova CP-07. A anotação visual indica deformação máxima de 14,2%. Para perguntas que digam 'conforme o gráfico da página 12', este é o valor correto."
+  }
+]
