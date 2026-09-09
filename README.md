@@ -14,7 +14,15 @@ Resposta esperada: **14,2%**, recuperada da evidência visual da **Figura 4, pá
 
 `PDF → texto/tabela/imagem → descrição/extração → embeddings MiniLM → MotherDuck → busca semântica → LLM → resposta + fonte/página`
 
-> O relatório incluído é sintético e foi criado apenas para demonstração acadêmica. A evidência visual da página 12 foi pré-processada para tornar a demonstração reprodutível no Streamlit Cloud. A etapa de visão computacional online (ex.: LLaVA) é uma evolução prevista do pipeline 2.0.
+> O relatório técnico usado no teste é sintético e foi criado apenas para demonstração acadêmica. A evidência visual da página 12 já foi pré-processada e carregada no MotherDuck para tornar a demonstração reprodutível no Streamlit Cloud. A etapa de visão computacional automática (ex.: LLaVA) é uma evolução prevista do pipeline 2.0.
+
+## MotherDuck
+
+Banco: `iae_bot_demo`
+
+Tabela: `pdf_data`
+
+Campos principais: `id`, `content`, `filename`, `page_number`, `content_type`, `figure_label`, `metadata`, `embedding`.
 
 ## Streamlit Secrets
 
