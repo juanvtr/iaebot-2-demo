@@ -144,45 +144,44 @@ def _figure_label(page_text: str) -> str | None:
     return value[0].upper() + value[1:]
 
 
-def _analyze_visual_page(
-    page: fitz.Page,
-    filename: str,
-    page_number: int,
-    page_text: str,
-) -> dict[str, Any] | None:
-    # Para a demo, só chamamos o modelo de visão quando a página contém
-    # pelo menos uma imagem raster. Isso evita analisar todas as páginas.
-    if not page.get_images(full=True):
-        return None
-
+def _vision_client() -> tuple[Client, str]:
     host = os.getenv("OLLAMA_HOST", "http://localhost:11434").rstrip("/")
     model = os.getenv("OLLAMA_VISION_MODEL", "llava")
     api_key = os.getenv("OLLAMA_API_KEY", "")
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else None
+    return Client(host=host, headers=headers), model
 
-    # Renderizamos a página completa: legenda, eixos e anotações permanecem
-    # no mesmo contexto visual do gráfico/imagem.
-    pix = page.get_pixmap(matrix=fitz.Matrix(1.7, 1.7), alpha=False)
-    png_bytes = pix.tobytes("png")
 
+def _describe_image(
+    image_bytes: bytes,
+    *,
+    page_number: int,
+    filename: str,
+    page_text: str,
+) -> tuple[str, str] | None:
+    client, model = _vision_client()
+
+    context = re.sub(r"\s+", " ", page_text).strip()[:1200]
     prompt = (
-        "Você está analisando uma página de um relatório técnico em português. "
-        "Descreva SOMENTE informações visuais relevantes presentes em gráficos, figuras, "
-        "diagramas ou imagens. Leia valores, unidades, rótulos, eixos, legendas e anotações "
-        "visíveis. Se houver um gráfico, destaque máximos, mínimos e valores explicitamente "
-        "marcados. Não invente valores. Responda de forma objetiva em português, como uma "
-        "evidência que será armazenada em um sistema RAG."
+        "Analise diretamente a imagem anexada, extraída de um relatório técnico em português. "
+        "Transcreva e descreva os dados visuais relevantes com precisão. Leia títulos, eixos, "
+        "legendas, unidades, números, porcentagens, máximos, mínimos e anotações. "
+        "Se houver uma anotação com um valor numérico, repita esse valor explicitamente na resposta. "
+        "Em especial, se aparecer algo como 'deformação máxima registrada', informe exatamente a "
+        "porcentagem mostrada. Não estime pela curva e não invente valores. "
+        "Responda em português, de forma objetiva, como uma evidência para um sistema RAG.\n\n"
+        f"Documento: {filename}\nPágina: {page_number}\n"
+        f"Contexto textual da página (apenas para contexto, não substitui a leitura da imagem): {context}"
     )
 
     try:
-        client = Client(host=host, headers=headers)
         response = client.chat(
             model=model,
             messages=[
                 {
                     "role": "user",
                     "content": prompt,
-                    "images": [png_bytes],
+                    "images": [image_bytes],
                 }
             ],
             options={"temperature": 0.0},
@@ -198,21 +197,103 @@ def _analyze_visual_page(
 
     if not description:
         return None
+    return description, model
 
+
+def _analyze_visual_page(
+    page: fitz.Page,
+    filename: str,
+    page_number: int,
+    page_text: str,
+) -> list[dict[str, Any]]:
+    """Analisa imagens raster diretamente; usa render da página apenas como fallback.
+
+    Enviar a imagem original ao modelo de visão preserva a resolução de gráficos e
+    anotações numéricas pequenas, evitando que elas se percam em um screenshot da página inteira.
+    """
+    rows: list[dict[str, Any]] = []
     label = _figure_label(page_text)
+    images = page.get_images(full=True)
+
+    for image_index, image_info in enumerate(images, start=1):
+        xref = image_info[0]
+        try:
+            extracted = page.parent.extract_image(xref)
+            image_bytes = extracted.get("image")
+            width = int(extracted.get("width") or 0)
+            height = int(extracted.get("height") or 0)
+        except Exception as exc:
+            logger.info("Falha ao extrair imagem %s da página %s: %s", image_index, page_number, exc)
+            continue
+
+        # Evita gastar tempo com logos, ícones e imagens decorativas muito pequenas.
+        if not image_bytes or width < 320 or height < 220 or width * height < 120_000:
+            continue
+
+        result = _describe_image(
+            image_bytes,
+            page_number=page_number,
+            filename=filename,
+            page_text=page_text,
+        )
+        if result is None:
+            continue
+
+        description, model = result
+        prefix = f"{label}. " if label else ""
+        rows.append(
+            _make_row(
+                filename,
+                page_number,
+                "image",
+                f"{prefix}Evidência visual da página {page_number} do documento {filename}. {description}",
+                figure_label=label,
+                metadata={
+                    "vision_model": model,
+                    "extraction": "embedded_image",
+                    "image_index": image_index,
+                    "width": width,
+                    "height": height,
+                },
+            )
+        )
+
+    if rows:
+        return rows
+
+    # Fallback para gráficos vetoriais ou páginas em que a imagem não pôde ser extraída.
+    has_visual_hint = bool(images) or bool(page.get_drawings()) or bool(label)
+    if not has_visual_hint:
+        return []
+
+    try:
+        pix = page.get_pixmap(matrix=fitz.Matrix(2.5, 2.5), alpha=False)
+        rendered = pix.tobytes("png")
+    except Exception as exc:
+        logger.info("Falha ao renderizar página %s: %s", page_number, exc)
+        return []
+
+    result = _describe_image(
+        rendered,
+        page_number=page_number,
+        filename=filename,
+        page_text=page_text,
+    )
+    if result is None:
+        return []
+
+    description, model = result
     prefix = f"{label}. " if label else ""
-    content = (
-        f"{prefix}Evidência visual da página {page_number} do documento {filename}. "
-        f"{description}"
-    )
-    return _make_row(
-        filename,
-        page_number,
-        "image",
-        content,
-        figure_label=label,
-        metadata={"vision_model": model, "extraction": "page_render"},
-    )
+    return [
+        _make_row(
+            filename,
+            page_number,
+            "image",
+            f"{prefix}Evidência visual da página {page_number} do documento {filename}. {description}",
+            figure_label=label,
+            metadata={"vision_model": model, "extraction": "page_render_fallback"},
+        )
+    ]
 
 
 def index_pdf_bytes(
@@ -243,15 +324,14 @@ def index_pdf_bytes(
             rows.append(_make_row(safe_name, page_no, "text", chunk))
 
         rows.extend(_extract_tables(visual_page, safe_name, page_no))
-
-        visual_row = _analyze_visual_page(
-            visual_page,
-            safe_name,
-            page_no,
-            page_text,
+        rows.extend(
+            _analyze_visual_page(
+                visual_page,
+                safe_name,
+                page_no,
+                page_text,
+            )
         )
-        if visual_row is not None:
-            rows.append(visual_row)
 
     visual_doc.close()
 
