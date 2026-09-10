@@ -356,6 +356,7 @@ with st.sidebar:
         f"""
         <div class="status-row"><span>Base</span><span class="status-value">{storage.backend}</span></div>
         <div class="status-row"><span>Modelo</span><span class="status-value">{settings.ollama_model}</span></div>
+        <div class="status-row"><span>Visão</span><span class="status-value">{settings.ollama_vision_model}</span></div>
         <div class="status-row"><span>Evidências</span><span class="status-value">{storage.count()}</span></div>
         <div class="status-row"><span>Recuperação</span><span class="status-value">top-{settings.top_k}</span></div>
         """,
@@ -363,25 +364,7 @@ with st.sidebar:
     )
 
     st.divider()
-    with st.expander("Adicionar documentos"):
-        st.caption("Indexe PDFs para ampliar a base consultável.")
-        uploads = st.file_uploader(
-            "Selecione PDFs",
-            type=["pdf"],
-            accept_multiple_files=True,
-            label_visibility="collapsed",
-        )
-        if st.button("Indexar documentos", use_container_width=True, disabled=not uploads):
-            total = 0
-            with st.spinner("Processando documentos..."):
-                for uploaded in uploads:
-                    total += index_pdf_bytes(
-                        uploaded.name,
-                        uploaded.getvalue(),
-                        embedding_manager,
-                        storage,
-                    )
-            st.success(f"{total} trechos indexados.")
+    st.caption("Use o botão + no campo de conversa para anexar relatórios PDF.")
 
     if st.button("Nova conversa", use_container_width=True):
         st.session_state.messages = []
@@ -391,7 +374,7 @@ with st.sidebar:
     st.caption("As respostas são geradas a partir das evidências recuperadas na base de conhecimento.")
 
 st.markdown(
-    f"""
+    """
     <div class="topbar">
       <div class="brand-wrap">
         <div class="brand-mark">IAE</div>
@@ -418,8 +401,8 @@ if not st.session_state.messages:
           </div>
         </div>
         <div class="empty-note">
-          Digite uma pergunta no campo abaixo. Quando houver evidência suficiente, a resposta incluirá
-          a origem da informação e a página correspondente.
+          Digite uma pergunta ou use o botão + no campo abaixo para adicionar um relatório PDF.
+          O documento será processado e incorporado à base de conhecimento.
         </div>
         """,
         unsafe_allow_html=True,
@@ -434,69 +417,102 @@ for message in st.session_state.messages:
         if message.get("meta"):
             st.caption(message["meta"])
 
-prompt = st.chat_input("Pergunte sobre os relatórios indexados...")
+submission = st.chat_input(
+    "Pergunte sobre os relatórios ou anexe um PDF...",
+    accept_file="multiple",
+    file_type=["pdf"],
+)
 
-if prompt:
-    st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user", avatar="👤"):
-        st.markdown(prompt)
+if submission:
+    if isinstance(submission, str):
+        prompt = submission.strip()
+        uploads = []
+    else:
+        prompt = (submission.text or "").strip()
+        uploads = list(submission.files or [])
 
-    with st.chat_message("assistant", avatar="🤖"):
-        with st.spinner("Analisando os documentos..."):
-            result = process_query(
-                prompt,
-                embedding_manager=embedding_manager,
-                generator=generator,
-                top_k=settings.top_k,
-                similarity_threshold=settings.similarity_threshold,
+    if uploads:
+        total_evidences = 0
+        with st.status("Processando documento(s)...", expanded=True) as status:
+            for uploaded in uploads:
+                st.write(f"Analisando **{uploaded.name}**: texto, tabelas e elementos visuais...")
+                inserted = index_pdf_bytes(
+                    uploaded.name,
+                    uploaded.getvalue(),
+                    embedding_manager,
+                    storage,
+                )
+                total_evidences += inserted
+                st.write(f"**{uploaded.name}**: {inserted} evidência(s) indexada(s).")
+
+            status.update(
+                label=f"{len(uploads)} documento(s) processado(s) · {total_evidences} evidência(s) indexada(s)",
+                state="complete",
+                expanded=False,
             )
+        st.toast("Documento(s) incorporado(s) à base de conhecimento.", icon="✅")
 
-        st.markdown(result["answer"])
+    if prompt:
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user", avatar="👤"):
+            st.markdown(prompt)
 
-        contexts = result.get("contexts", [])
-        latency = result.get("latency_s", 0.0)
-        mode = result.get("generation_mode", "")
+        with st.chat_message("assistant", avatar="🤖"):
+            with st.spinner("Analisando os documentos..."):
+                result = process_query(
+                    prompt,
+                    embedding_manager=embedding_manager,
+                    generator=generator,
+                    top_k=settings.top_k,
+                    similarity_threshold=settings.similarity_threshold,
+                )
 
-        if contexts:
-            labels = []
-            seen = set()
-            for item in contexts:
-                source = item.get("source", "documento")
-                page = item.get("page_number")
-                key = (source, page)
-                if key in seen:
-                    continue
-                seen.add(key)
-                label = source if not page else f"{source} · p. {page}"
-                labels.append(label)
+            st.markdown(result["answer"])
 
-            chips = "".join(f'<span class="source-chip">{label}</span>' for label in labels[:4])
-            st.markdown(chips, unsafe_allow_html=True)
+            contexts = result.get("contexts", [])
+            latency = result.get("latency_s", 0.0)
+            mode = result.get("generation_mode", "")
 
-            with st.expander("Ver evidências utilizadas"):
-                for i, item in enumerate(contexts, start=1):
-                    loc = f" · página {item['page_number']}" if item.get("page_number") else ""
-                    tipo = item.get("content_type", "text")
-                    figura = f" · {item['figure_label']}" if item.get("figure_label") else ""
-                    st.markdown(
-                        f"**{i}. {item['source']}{loc}{figura}**  \n"
-                        f"Tipo: `{tipo}` · similaridade: `{item['score']:.3f}`"
-                    )
-                    st.write(item["content"])
-                    if i < len(contexts):
-                        st.divider()
+            if contexts:
+                labels = []
+                seen = set()
+                for item in contexts:
+                    source = item.get("source", "documento")
+                    page = item.get("page_number")
+                    key = (source, page)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    label = source if not page else f"{source} · p. {page}"
+                    labels.append(label)
 
-        meta = f"{len(contexts)} evidência(s) · {latency:.2f}s"
-        if mode:
-            meta += f" · {mode}"
-        st.caption(meta)
+                chips = "".join(f'<span class="source-chip">{label}</span>' for label in labels[:4])
+                st.markdown(chips, unsafe_allow_html=True)
 
-    st.session_state.messages.append(
-        {
-            "role": "assistant",
-            "content": result["answer"],
-            "meta": meta,
-        }
-    )
+                with st.expander("Ver evidências utilizadas"):
+                    for i, item in enumerate(contexts, start=1):
+                        loc = f" · página {item['page_number']}" if item.get("page_number") else ""
+                        tipo = item.get("content_type", "text")
+                        figura = f" · {item['figure_label']}" if item.get("figure_label") else ""
+                        st.markdown(
+                            f"**{i}. {item['source']}{loc}{figura}**  \n"
+                            f"Tipo: `{tipo}` · similaridade: `{item['score']:.3f}`"
+                        )
+                        st.write(item["content"])
+                        if i < len(contexts):
+                            st.divider()
+
+            meta = f"{len(contexts)} evidência(s) · {latency:.2f}s"
+            if mode:
+                meta += f" · {mode}"
+            st.caption(meta)
+
+        st.session_state.messages.append(
+            {
+                "role": "assistant",
+                "content": result["answer"],
+                "meta": meta,
+            }
+        )
 
 st.markdown("</div>", unsafe_allow_html=True)
