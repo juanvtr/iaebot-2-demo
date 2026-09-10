@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from pathlib import Path
 import sqlite3
 from typing import Iterable
@@ -19,9 +20,14 @@ class Storage:
         self._sqlite_path = Path("data/iae_chat_demo.db")
         self._sqlite_path.parent.mkdir(parents=True, exist_ok=True)
 
-        if motherduck_token:
+        token = (motherduck_token or "").strip()
+        if token:
             try:
-                self._conn = duckdb.connect(f"md:{database}?motherduck_token={motherduck_token}")
+                # O cliente MotherDuck reconhece oficialmente MOTHERDUCK_TOKEN.
+                # Usamos a variável de ambiente em vez de interpolar o token na URL,
+                # o que evita problemas de parsing/autenticação no Windows.
+                os.environ["MOTHERDUCK_TOKEN"] = token
+                self._conn = duckdb.connect(f"md:{database}")
                 self.backend = f"MotherDuck ({database})"
                 self._create_duckdb_schema()
                 return
