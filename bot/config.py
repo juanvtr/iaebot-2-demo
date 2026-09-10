@@ -23,6 +23,7 @@ class Settings:
     ollama_host: str = "http://localhost:11434"
     ollama_api_key: str = ""
     ollama_model: str = "llama3.1"
+    ollama_vision_model: str = "llava"
     top_k: int = 8
     similarity_threshold: float = 0.40
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
@@ -35,6 +36,7 @@ class Settings:
             ollama_host=_get(secrets, "OLLAMA_HOST", "http://localhost:11434"),
             ollama_api_key=_get(secrets, "OLLAMA_API_KEY"),
             ollama_model=_get(secrets, "OLLAMA_MODEL", "llama3.1"),
+            ollama_vision_model=_get(secrets, "OLLAMA_VISION_MODEL", "llava"),
             top_k=int(_get(secrets, "TOP_K", "8")),
             similarity_threshold=float(_get(secrets, "SIMILARITY_THRESHOLD", "0.40")),
             embedding_model=_get(secrets, "EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2"),
