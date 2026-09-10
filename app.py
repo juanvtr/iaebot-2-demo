@@ -428,7 +428,7 @@ if not st.session_state.messages:
 st.markdown('<div class="chat-shell">', unsafe_allow_html=True)
 
 for message in st.session_state.messages:
-    avatar = "👤" if message["role"] == "user" else "✦"
+    avatar = "👤" if message["role"] == "user" else "🤖"
     with st.chat_message(message["role"], avatar=avatar):
         st.markdown(message["content"])
         if message.get("meta"):
@@ -441,7 +441,7 @@ if prompt:
     with st.chat_message("user", avatar="👤"):
         st.markdown(prompt)
 
-    with st.chat_message("assistant", avatar="✦"):
+    with st.chat_message("assistant", avatar="🤖"):
         with st.spinner("Analisando os documentos..."):
             result = process_query(
                 prompt,
